@@ -29,6 +29,16 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.BitmapFactory
+import androidx.exifinterface.media.ExifInterface
+import android.graphics.Bitmap
+import android.widget.Toast
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 
@@ -172,20 +182,25 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
 @Composable
 private fun PhotoReview(uri: Uri?) {
     var selected by remember(uri) { mutableStateOf(CinematicLook.ORIGINAL) }
+    var busyExport by remember { mutableStateOf(false) }
+    var autoRecommend by remember { mutableStateOf(true) }
+    var intensity by remember(uri) { mutableFloatStateOf(1f) }
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val bitmap = remember(uri) {
-        uri?.let {
-            try {
-                context.contentResolver.openInputStream(it)?.use { stream ->
-                    BitmapFactory.decodeStream(stream)
-                }
-            } catch (_: Exception) { null }
+    var bitmap by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(uri) {
+        bitmap = null
+        if (uri != null) bitmap = withContext(Dispatchers.IO) {
+            runCatching { PhotoDecoder.decode(context, uri, 1600) }.getOrNull()
         }
+    }
+    LaunchedEffect(bitmap) {
+        bitmap?.let { if (autoRecommend) selected = withContext(Dispatchers.Default) { LookRecommender.recommend(it) } }
     }
     Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center) {
         if (bitmap != null) {
-            val preview = remember(bitmap, selected) { CinematicProcessor.render(bitmap, selected) }
+            val preview = remember(bitmap, selected, intensity) { CinematicProcessor.render(bitmap!!, selected, intensity = intensity) }
             Image(bitmap = preview.asImageBitmap(), contentDescription = "Most recently captured photo",
                 modifier = Modifier.fillMaxWidth().weight(1f))
             Text("Original saved to Pictures/Still")
@@ -199,9 +214,35 @@ private fun PhotoReview(uri: Uri?) {
                     )
                 }
             }
-            Text("Preview only · original remains untouched")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Auto-select look", modifier = Modifier.weight(1f))
+                Switch(checked = autoRecommend, onCheckedChange = {
+                    autoRecommend = it
+                    if (it) selected = LookRecommender.recommend(bitmap!!)
+                })
+            }
+            Text("Suggested: ${LookRecommender.recommend(bitmap!!).title}")
+            Text("Look intensity: ${(intensity * 100).toInt()}%")
+            Slider(value = intensity, onValueChange = { intensity = it }, valueRange = 0f..1f)
+            Button(
+                enabled = !busyExport && selected != CinematicLook.ORIGINAL,
+                onClick = {
+                    busyExport = true
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching { PhotoExporter.export(context, uri!!, selected, intensity) }
+                        }
+                        busyExport = false
+                        Toast.makeText(context,
+                            result.fold({ "Edited photo saved to Pictures/Still" },
+                                { "Export failed: ${it.message}" }),
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
+            ) { Text(if (busyExport) "Exporting…" else "Save edited copy") }
+            Text("Original is always preserved")
         } else {
-            Text("Capture a photo to review it here.")
+            Text(if (uri == null) "Capture a photo to review it here." else "Loading photo…")
         }
     }
 }
