@@ -11,10 +11,8 @@ import android.provider.MediaStore
 object PhotoExporter {
     fun export(context: Context, original: Uri, look: CinematicLook): Uri {
         require(look != CinematicLook.ORIGINAL) { "Choose an edited look" }
-        val bitmap = context.contentResolver.openInputStream(original)?.use {
-            BitmapFactory.decodeStream(it)
-        } ?: error("Unable to decode original photo")
-        val rendered = CinematicProcessor.render(bitmap, look, maxEdge = 8192)
+        val bitmap = PhotoDecoder.decode(context, original, 4096)
+        val rendered = CinematicProcessor.render(bitmap, look, maxEdge = 4096)
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "Still_${look.name}_${System.currentTimeMillis()}.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")

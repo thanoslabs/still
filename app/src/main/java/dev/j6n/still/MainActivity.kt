@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.BitmapFactory
+import androidx.exifinterface.media.ExifInterface
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.runtime.LaunchedEffect
@@ -182,22 +183,20 @@ private fun PhotoReview(uri: Uri?) {
     var busyExport by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val bitmap = remember(uri) {
-        uri?.let {
-            try {
-                context.contentResolver.openInputStream(it)?.use { stream ->
-                    BitmapFactory.decodeStream(stream)
-                }
-            } catch (_: Exception) { null }
+    var bitmap by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(uri) {
+        bitmap = null
+        if (uri != null) bitmap = withContext(Dispatchers.IO) {
+            runCatching { PhotoDecoder.decode(context, uri, 1600) }.getOrNull()
         }
     }
     LaunchedEffect(bitmap) {
-        if (bitmap != null) selected = LookRecommender.recommend(bitmap)
+        bitmap?.let { selected = withContext(Dispatchers.Default) { LookRecommender.recommend(it) } }
     }
     Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center) {
         if (bitmap != null) {
-            val preview = remember(bitmap, selected) { CinematicProcessor.render(bitmap, selected) }
+            val preview = remember(bitmap, selected) { CinematicProcessor.render(bitmap!!, selected) }
             Image(bitmap = preview.asImageBitmap(), contentDescription = "Most recently captured photo",
                 modifier = Modifier.fillMaxWidth().weight(1f))
             Text("Original saved to Pictures/Still")
@@ -211,7 +210,7 @@ private fun PhotoReview(uri: Uri?) {
                     )
                 }
             }
-            Text("Suggested look: ${LookRecommender.recommend(bitmap).title} · choose any look")
+            Text("Suggested look: ${LookRecommender.recommend(bitmap!!).title} · choose any look")
             Button(
                 enabled = !busyExport && selected != CinematicLook.ORIGINAL,
                 onClick = {
@@ -230,7 +229,7 @@ private fun PhotoReview(uri: Uri?) {
             ) { Text(if (busyExport) "Exporting…" else "Save edited copy") }
             Text("Original is always preserved")
         } else {
-            Text("Capture a photo to review it here.")
+            Text(if (uri == null) "Capture a photo to review it here." else "Loading photo…")
         }
     }
 }
