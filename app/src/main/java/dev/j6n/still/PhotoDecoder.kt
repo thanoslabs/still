@@ -13,8 +13,8 @@ object PhotoDecoder {
         require(maxEdge > 0)
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: error("Cannot read image bounds")
+        val boundsStream = resolver.openInputStream(uri) ?: error("Cannot open image")
+        boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid image" }
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxEdge) sample *= 2

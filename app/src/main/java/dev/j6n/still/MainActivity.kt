@@ -188,10 +188,17 @@ private fun PhotoReview(uri: Uri?) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var bitmap by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(uri) {
+    var loadError by remember(uri) { mutableStateOf<String?>(null) }
+    var retryCount by remember(uri) { mutableIntStateOf(0) }
+    LaunchedEffect(uri, retryCount) {
         bitmap = null
-        if (uri != null) bitmap = withContext(Dispatchers.IO) {
-            runCatching { PhotoDecoder.decode(context, uri, 1600) }.getOrNull()
+        loadError = null
+        if (uri != null) {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { PhotoDecoder.decode(context, uri, 1600) }
+            }
+            result.onSuccess { bitmap = it }
+                .onFailure { loadError = it.message ?: "Unable to open photo" }
         }
     }
     LaunchedEffect(bitmap) {
@@ -242,7 +249,15 @@ private fun PhotoReview(uri: Uri?) {
             ) { Text(if (busyExport) "Exporting…" else "Save edited copy") }
             Text("Original is always preserved")
         } else {
-            Text(if (uri == null) "Capture a photo to review it here." else "Loading photo…")
+            when {
+                uri == null -> Text("Capture a photo to review it here.")
+                loadError != null -> {
+                    Text("Couldn't load photo: ${loadError}", color = MaterialTheme.colorScheme.error)
+                    Button(onClick = { retryCount++ }) { Text("Retry") }
+                    Text("Your original photo remains saved in Pictures/Still.")
+                }
+                else -> CircularProgressIndicator()
+            }
         }
     }
 }
