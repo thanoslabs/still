@@ -2,24 +2,21 @@
 
 An offline-first Android camera for polished, cinematic photography.
 
-## Product direction
+## Product principles
 
-- Original captures are preserved.
-- Cinematic presets are recommended **after** capture, never forced on the live viewfinder.
-- Preset selection is always overridable.
-- Image processing and preferences remain on-device.
-- The camera starts simple, with optional advanced controls.
+- Preserve the original photo.
+- Suggest cinematic presets **after** capture, with manual override.
+- Keep image processing on-device.
+- Start with balanced controls and expand when needed.
 
-## Status
+## Current status
 
-M0: native Android foundation. The camera, image pipeline, and recommendations are planned for later milestones; this starter does not capture photos.
+M1 in progress: CameraX preview, runtime camera permission, JPEG capture into Pictures/Still, and review of the latest capture. Automatic looks, non-destructive recipes, and personalized recommendations are upcoming milestones.
 
 ## Development
 
-Requires JDK 17, Android SDK 35, and Gradle 8.11.1. Versions are pinned in `.tool-versions`.
+Requires JDK 17, Android SDK 35 and Gradle 8.11.1. Versions are in `.tool-versions`.
 
 ```sh
 gradle :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
 ```
-
-CI builds a debug APK for each PR. See `docs/` for future project documentation.
