@@ -29,6 +29,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -169,12 +171,13 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
 
 @Composable
 private fun PhotoReview(uri: Uri?) {
+    var selected by remember(uri) { mutableStateOf(CinematicLook.ORIGINAL) }
     val context = LocalContext.current
     val bitmap = remember(uri) {
         uri?.let {
             try {
                 context.contentResolver.openInputStream(it)?.use { stream ->
-                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                    BitmapFactory.decodeStream(stream)
                 }
             } catch (_: Exception) { null }
         }
@@ -182,9 +185,21 @@ private fun PhotoReview(uri: Uri?) {
     Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center) {
         if (bitmap != null) {
-            Image(bitmap = bitmap, contentDescription = "Most recently captured photo",
+            val preview = remember(bitmap, selected) { CinematicProcessor.render(bitmap, selected) }
+            Image(bitmap = preview.asImageBitmap(), contentDescription = "Most recently captured photo",
                 modifier = Modifier.fillMaxWidth().weight(1f))
             Text("Original saved to Pictures/Still")
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                CinematicLook.entries.forEach { look ->
+                    FilterChip(
+                        selected = selected == look,
+                        onClick = { selected = look },
+                        label = { Text(look.title) },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+            }
+            Text("Preview only · original remains untouched")
         } else {
             Text("Capture a photo to review it here.")
         }
