@@ -34,6 +34,8 @@ import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -181,6 +183,8 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
 private fun PhotoReview(uri: Uri?) {
     var selected by remember(uri) { mutableStateOf(CinematicLook.ORIGINAL) }
     var busyExport by remember { mutableStateOf(false) }
+    var autoRecommend by remember { mutableStateOf(true) }
+    var intensity by remember(uri) { mutableFloatStateOf(1f) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var bitmap by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -191,12 +195,12 @@ private fun PhotoReview(uri: Uri?) {
         }
     }
     LaunchedEffect(bitmap) {
-        bitmap?.let { selected = withContext(Dispatchers.Default) { LookRecommender.recommend(it) } }
+        bitmap?.let { if (autoRecommend) selected = withContext(Dispatchers.Default) { LookRecommender.recommend(it) } }
     }
     Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center) {
         if (bitmap != null) {
-            val preview = remember(bitmap, selected) { CinematicProcessor.render(bitmap!!, selected) }
+            val preview = remember(bitmap, selected, intensity) { CinematicProcessor.render(bitmap!!, selected, intensity = intensity) }
             Image(bitmap = preview.asImageBitmap(), contentDescription = "Most recently captured photo",
                 modifier = Modifier.fillMaxWidth().weight(1f))
             Text("Original saved to Pictures/Still")
@@ -210,14 +214,23 @@ private fun PhotoReview(uri: Uri?) {
                     )
                 }
             }
-            Text("Suggested look: ${LookRecommender.recommend(bitmap!!).title} · choose any look")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Auto-select look", modifier = Modifier.weight(1f))
+                Switch(checked = autoRecommend, onCheckedChange = {
+                    autoRecommend = it
+                    if (it) selected = LookRecommender.recommend(bitmap!!)
+                })
+            }
+            Text("Suggested: ${LookRecommender.recommend(bitmap!!).title}")
+            Text("Look intensity: ${(intensity * 100).toInt()}%")
+            Slider(value = intensity, onValueChange = { intensity = it }, valueRange = 0f..1f)
             Button(
                 enabled = !busyExport && selected != CinematicLook.ORIGINAL,
                 onClick = {
                     busyExport = true
                     scope.launch {
                         val result = withContext(Dispatchers.IO) {
-                            runCatching { PhotoExporter.export(context, uri!!, selected) }
+                            runCatching { PhotoExporter.export(context, uri!!, selected, intensity) }
                         }
                         busyExport = false
                         Toast.makeText(context,
