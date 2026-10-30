@@ -29,6 +29,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.widget.Toast
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 
@@ -172,6 +179,8 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
 @Composable
 private fun PhotoReview(uri: Uri?) {
     var selected by remember(uri) { mutableStateOf(CinematicLook.ORIGINAL) }
+    var busyExport by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val bitmap = remember(uri) {
         uri?.let {
@@ -181,6 +190,9 @@ private fun PhotoReview(uri: Uri?) {
                 }
             } catch (_: Exception) { null }
         }
+    }
+    LaunchedEffect(bitmap) {
+        if (bitmap != null) selected = LookRecommender.recommend(bitmap)
     }
     Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center) {
@@ -199,7 +211,24 @@ private fun PhotoReview(uri: Uri?) {
                     )
                 }
             }
-            Text("Preview only · original remains untouched")
+            Text("Suggested look: ${LookRecommender.recommend(bitmap).title} · choose any look")
+            Button(
+                enabled = !busyExport && selected != CinematicLook.ORIGINAL,
+                onClick = {
+                    busyExport = true
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            runCatching { PhotoExporter.export(context, uri!!, selected) }
+                        }
+                        busyExport = false
+                        Toast.makeText(context,
+                            result.fold({ "Edited photo saved to Pictures/Still" },
+                                { "Export failed: ${it.message}" }),
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
+            ) { Text(if (busyExport) "Exporting…" else "Save edited copy") }
+            Text("Original is always preserved")
         } else {
             Text("Capture a photo to review it here.")
         }
