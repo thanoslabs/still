@@ -185,6 +185,7 @@ private fun PhotoReview(uri: Uri?) {
     var busyExport by remember { mutableStateOf(false) }
     var autoRecommend by remember { mutableStateOf(true) }
     var intensity by remember(uri) { mutableFloatStateOf(1f) }
+    var showOriginal by remember(uri) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var bitmap by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -208,8 +209,13 @@ private fun PhotoReview(uri: Uri?) {
         verticalArrangement = Arrangement.Center) {
         if (bitmap != null) {
             val preview = remember(bitmap, selected, intensity) { CinematicProcessor.render(bitmap!!, selected, intensity = intensity) }
-            Image(bitmap = preview.asImageBitmap(), contentDescription = "Most recently captured photo",
+            Image(bitmap = (if (showOriginal) bitmap!! else preview).asImageBitmap(), contentDescription = if (showOriginal) "Original photo" else "Edited photo",
                 modifier = Modifier.fillMaxWidth().weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Compare original", modifier = Modifier.weight(1f))
+                Switch(checked = showOriginal, onCheckedChange = { showOriginal = it })
+            }
+            Text(if (showOriginal) "Viewing original (edits preserved)" else "Viewing edited preview")
             Text("Original saved to Pictures/Still")
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 CinematicLook.entries.forEach { look ->
