@@ -6,15 +6,36 @@ plugins {
 android {
     namespace = "dev.j6n.still"
     compileSdk = 35
+    val buildNumber = (providers.gradleProperty("stillVersionCode").orNull ?: "1").toInt()
+    val buildVersion = providers.gradleProperty("stillVersionName").orNull ?: "0.1.0"
     defaultConfig {
         applicationId = "dev.j6n.still"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = buildNumber
+        versionName = buildVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    signingConfigs {
+        create("distribution") {
+            val encoded = System.getenv("STILL_KEYSTORE_BASE64")
+            if (!encoded.isNullOrBlank()) {
+                val keystoreFile = layout.buildDirectory.file("signing/still-release.jks").get().asFile
+                keystoreFile.parentFile.mkdirs()
+                keystoreFile.writeBytes(java.util.Base64.getDecoder().decode(encoded))
+                storeFile = keystoreFile
+                storePassword = System.getenv("STILL_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("STILL_KEY_ALIAS")
+                keyPassword = System.getenv("STILL_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("distribution")
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

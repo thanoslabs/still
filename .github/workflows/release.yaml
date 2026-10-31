@@ -87,16 +87,49 @@ jobs:
           git tag -a "${VERSION}" -m "Release ${VERSION}"
           git push origin "refs/tags/${VERSION}"
 
-      # TODO(project): build and publish release artifacts for this version, e.g.:
-      #   - docker build -t <registry>/<image>:${VERSION} . && docker push <registry>/<image>:${VERSION}
-      #   - go build / goreleaser release
-      #   - npm publish / cargo publish
-      # Then attach files to the release with: gh release upload "${VERSION}" <files...>
-      #
-      # NOTE: pushes/creations made with the default GITHUB_TOKEN do NOT trigger
-      # other workflows (e.g. on: push of tags, on: release). If release events
-      # must fan out to further automation, use a PAT or a GitHub App token
-      # (see actions/create-github-app-token in the Renovate workflow).
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK components
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Validate signing configuration
+        env:
+          STILL_KEYSTORE_BASE64: ${{ secrets.STILL_KEYSTORE_BASE64 }}
+          STILL_KEYSTORE_PASSWORD: ${{ secrets.STILL_KEYSTORE_PASSWORD }}
+          STILL_KEY_ALIAS: ${{ secrets.STILL_KEY_ALIAS }}
+          STILL_KEY_PASSWORD: ${{ secrets.STILL_KEY_PASSWORD }}
+        run: |
+          for name in STILL_KEYSTORE_BASE64 STILL_KEYSTORE_PASSWORD STILL_KEY_ALIAS STILL_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing $name; configure a persistent release signing key in repository secrets"
+              exit 1
+            fi
+          done
+
+      - name: Build signed release APK
+        env:
+          STILL_KEYSTORE_BASE64: ${{ secrets.STILL_KEYSTORE_BASE64 }}
+          STILL_KEYSTORE_PASSWORD: ${{ secrets.STILL_KEYSTORE_PASSWORD }}
+          STILL_KEY_ALIAS: ${{ secrets.STILL_KEY_ALIAS }}
+          STILL_KEY_PASSWORD: ${{ secrets.STILL_KEY_PASSWORD }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # GitHub run number grows for every release run, including manual releases.
+          gradle --no-daemon :app:assembleRelease \
+            -PstillVersionCode="${GITHUB_RUN_NUMBER}" \
+            -PstillVersionName="${VERSION}"
+          test -f app/build/outputs/apk/release/app-release.apk
 
       - name: Create GitHub release
         env:
@@ -106,3 +139,11 @@ jobs:
           gh release create "${VERSION}" \
             --title "${VERSION}" \
             --generate-notes
+
+      - name: Attach APK to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release upload "${VERSION}" app/build/outputs/apk/release/app-release.apk --clobber
+
