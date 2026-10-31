@@ -9,10 +9,10 @@ import android.provider.MediaStore
 
 /** Export to a NEW MediaStore entry. Never writes to or deletes the source URI. */
 object PhotoExporter {
-    fun export(context: Context, original: Uri, look: CinematicLook, intensity: Float = 1f): Uri {
+    fun export(context: Context, original: Uri, look: CinematicLook, intensity: Float = 1f, custom: LookSettings? = null): Uri {
         require(look != CinematicLook.ORIGINAL) { "Choose an edited look" }
         val bitmap = PhotoDecoder.decode(context, original, 4096)
-        val rendered = CinematicProcessor.render(bitmap, look, maxEdge = 4096, intensity = intensity)
+        val rendered = CinematicProcessor.render(bitmap, look, maxEdge = 4096, intensity = intensity, custom = custom)
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "Still_${look.name}_${System.currentTimeMillis()}.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")

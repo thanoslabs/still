@@ -9,18 +9,33 @@ enum class CinematicLook(val title: String, val contrast: Float, val warmth: Flo
     STILL("Still", 1.12f, 0.04f, 0.85f),
     DUSK("Dusk", 1.18f, 0.09f, 0.78f),
     NOIR("Noir", 1.25f, 0f, 0f),
-    COOL("Blue Hour", 1.1f, -0.08f, 0.82f)
+    COOL("Blue Hour", 1.1f, -0.08f, 0.82f),
+    GOLDEN("Golden Hour", 1.08f, 0.12f, 1.12f),
+    VINTAGE("Vintage Film", 0.94f, 0.08f, 0.72f),
+    TEAL("Teal & Orange", 1.22f, -0.06f, 1.2f),
+    MOODY("Moody", 1.32f, -0.03f, 0.62f),
+    FADED("Faded Film", 0.82f, 0.035f, 0.68f),
+    BLEACH("Bleach Bypass", 1.35f, -0.015f, 0.36f),
+    ROSE("Rose", 1.05f, 0.065f, 0.94f),
+    DESERT("Desert Epic", 1.24f, 0.14f, 0.62f),
+    ETERNA("Cinema Neutral", 0.92f, -0.015f, 0.73f),
+    CLASSIC("Classic Chrome Inspired", 1.08f, -0.045f, 0.64f),
+    NEGATIVE("Classic Negative Inspired", 1.18f, 0.045f, 0.82f),
+    CUSTOM("My Recipe", 1f, 0f, 1f)
 }
+
+data class LookSettings(val contrast: Float, val warmth: Float, val saturation: Float)
 
 object CinematicProcessor {
     /** Render a bounded-size preview; the original full-resolution Bitmap is never modified. */
-    fun render(source: Bitmap, look: CinematicLook, maxEdge: Int = 1280, intensity: Float = 1f): Bitmap {
+    fun render(source: Bitmap, look: CinematicLook, maxEdge: Int = 1280, intensity: Float = 1f, custom: LookSettings? = null): Bitmap {
         val strength = intensity.coerceIn(0f, 1f)
         val scale = minOf(1f, maxEdge.toFloat() / maxOf(source.width, source.height))
         val width = maxOf(1, (source.width * scale).toInt())
         val height = maxOf(1, (source.height * scale).toInt())
         val input = Bitmap.createScaledBitmap(source, width, height, true)
         if (look == CinematicLook.ORIGINAL || strength == 0f) return input
+        val settings = if (look == CinematicLook.CUSTOM) (custom ?: LookSettings(1f, 0f, 1f)) else LookSettings(look.contrast, look.warmth, look.saturation)
         val pixels = IntArray(width * height)
         input.getPixels(pixels, 0, width, 0, 0, width, height)
         for (i in pixels.indices) {
@@ -30,15 +45,15 @@ object CinematicProcessor {
             val b = Color.blue(pixel).toFloat()
             val gray = 0.2126f * r + 0.7152f * g + 0.0722f * b
             fun adjust(value: Float, warmth: Float): Int {
-                val saturated = gray + (value - gray) * look.saturation
-                return ((saturated - 127.5f) * look.contrast + 127.5f + warmth)
+                val saturated = gray + (value - gray) * settings.saturation
+                return ((saturated - 127.5f) * settings.contrast + 127.5f + warmth)
                     .toInt().coerceIn(0, 255)
             }
             fun blend(original: Float, graded: Int): Int =
                 (original + (graded - original) * strength).toInt().coerceIn(0, 255)
             pixels[i] = Color.argb(
                 Color.alpha(pixel),
-                blend(r, adjust(r, look.warmth * 255)),
+                blend(r, adjust(r, settings.warmth * 255)),
                 blend(g, adjust(g, 0f)),
                 blend(b, adjust(b, -look.warmth * 255))
             )

@@ -39,6 +39,7 @@ import androidx.compose.material3.Switch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 
@@ -85,7 +86,13 @@ fun StillApp() {
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text("still.", style = MaterialTheme.typography.displayLarge)
-                        Text("Cinematic looks coming next")
+                        Text("Film-inspired looks and custom recipes")
+                        Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
+                            CinematicLook.entries.filter { it != CinematicLook.ORIGINAL }.forEach { look ->
+                                Text(look.title, modifier = Modifier.padding(vertical = 6.dp))
+                            }
+                            Text("Choose a look after capturing a photo.")
+                        }
                     }
                 }
             }
@@ -188,6 +195,11 @@ private fun PhotoReview(uri: Uri?) {
     var showOriginal by remember(uri) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("still_recipes", android.content.Context.MODE_PRIVATE) }
+    var customContrast by remember { mutableFloatStateOf(prefs.getFloat("contrast", 1.1f)) }
+    var customWarmth by remember { mutableFloatStateOf(prefs.getFloat("warmth", 0.04f)) }
+    var customSaturation by remember { mutableFloatStateOf(prefs.getFloat("saturation", 0.85f)) }
+    val customSettings = LookSettings(customContrast, customWarmth, customSaturation)
     var bitmap by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var loadError by remember(uri) { mutableStateOf<String?>(null) }
     var retryCount by remember(uri) { mutableIntStateOf(0) }
@@ -208,7 +220,7 @@ private fun PhotoReview(uri: Uri?) {
     Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center) {
         if (bitmap != null) {
-            val preview = remember(bitmap, selected, intensity) { CinematicProcessor.render(bitmap!!, selected, intensity = intensity) }
+            val preview = remember(bitmap, selected, intensity, customContrast, customWarmth, customSaturation) { CinematicProcessor.render(bitmap!!, selected, intensity = intensity, custom = customSettings) }
             Image(bitmap = (if (showOriginal) bitmap!! else preview).asImageBitmap(), contentDescription = if (showOriginal) "Original photo" else "Edited photo",
                 modifier = Modifier.fillMaxWidth().weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -235,6 +247,21 @@ private fun PhotoReview(uri: Uri?) {
                 })
             }
             Text("Suggested: ${LookRecommender.recommend(bitmap!!).title}")
+            if (selected == CinematicLook.CUSTOM) {
+                Text("My Recipe · saved on this device")
+                Text("Contrast: ${"%.2f".format(customContrast)}")
+                Slider(value = customContrast, onValueChange = {
+                    customContrast = it; prefs.edit().putFloat("contrast", it).apply()
+                }, valueRange = 0.6f..1.6f)
+                Text("Warmth: ${"%.2f".format(customWarmth)}")
+                Slider(value = customWarmth, onValueChange = {
+                    customWarmth = it; prefs.edit().putFloat("warmth", it).apply()
+                }, valueRange = -0.2f..0.2f)
+                Text("Saturation: ${"%.2f".format(customSaturation)}")
+                Slider(value = customSaturation, onValueChange = {
+                    customSaturation = it; prefs.edit().putFloat("saturation", it).apply()
+                }, valueRange = 0f..1.6f)
+            }
             Text("Look intensity: ${(intensity * 100).toInt()}%")
             Slider(value = intensity, onValueChange = { intensity = it }, valueRange = 0f..1f)
             Button(
@@ -243,7 +270,7 @@ private fun PhotoReview(uri: Uri?) {
                     busyExport = true
                     scope.launch {
                         val result = withContext(Dispatchers.IO) {
-                            runCatching { PhotoExporter.export(context, uri!!, selected, intensity) }
+                            runCatching { PhotoExporter.export(context, uri!!, selected, intensity, customSettings) }
                         }
                         busyExport = false
                         Toast.makeText(context,
