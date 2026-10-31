@@ -13,6 +13,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Camera
+import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.MeteringPointFactory
+import androidx.compose.foundation.clickable
+import java.util.concurrent.TimeUnit
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -114,6 +119,42 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var frontFacing by remember { mutableStateOf(false) }
+    var flashEnabled by remember { mutableStateOf(false) }
+    var boundCamera by remember { mutableStateOf<Camera?>(null) }
+    var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    var cameraError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(granted, frontFacing, previewView) {
+        val view = previewView ?: return@LaunchedEffect
+        if (!granted) return@LaunchedEffect
+        imageCapture = null
+        boundCamera = null
+        try {
+            val provider = withContext(Dispatchers.IO) {
+                ProcessCameraProvider.getInstance(context).get()
+            }
+            val selector = if (frontFacing) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+            if (!provider.hasCamera(selector)) {
+                cameraError = "This device doesn't have the selected camera"
+                return@LaunchedEffect
+            }
+            val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
+            val capture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .setFlashMode(if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
+                .build()
+            provider.unbindAll()
+            boundCamera = provider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
+            imageCapture = capture
+            cameraError = null
+        } catch (exception: Exception) {
+            cameraError = exception.message ?: "Unable to start camera"
+        }
+    }
+    LaunchedEffect(flashEnabled, imageCapture) {
+        imageCapture?.flashMode = if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
+    }
 
     if (!granted) {
         Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -128,31 +169,35 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = { frontFacing = !frontFacing }, enabled = !busy) {
+                Text(if (frontFacing) "Front camera ↺" else "Rear camera ↺")
+            }
+            OutlinedButton(onClick = { flashEnabled = !flashEnabled }, enabled = !busy) {
+                Text(if (flashEnabled) "Flash on" else "Flash off")
+            }
+        }
         AndroidView(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            factory = { ctx -> PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } },
-            update = { view ->
-                if (view.tag != lifecycleOwner) {
-                    view.tag = lifecycleOwner
-                    val future = ProcessCameraProvider.getInstance(context)
-                    future.addListener({
-                        try {
-                            val provider = future.get()
-                            val preview = Preview.Builder().build().also {
-                                it.surfaceProvider = view.surfaceProvider
-                            }
-                            val capture = ImageCapture.Builder()
-                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY).build()
-                            provider.unbindAll()
-                            provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, capture)
-                            imageCapture = capture
-                        } catch (exception: Exception) {
-                            error = exception.message ?: "Unable to start camera"
-                        }
-                    }, ContextCompat.getMainExecutor(context))
+            factory = { ctx -> PreviewView(ctx).apply {
+                scaleType = PreviewView.ScaleType.FILL_CENTER
+                setOnTouchListener { view, event ->
+                    if (event.action == android.view.MotionEvent.ACTION_UP) {
+                        val point = (view as PreviewView).meteringPointFactory.createPoint(event.x, event.y)
+                        boundCamera?.cameraControl?.startFocusAndMetering(
+                            FocusMeteringAction.Builder(point).setAutoCancelDuration(3, TimeUnit.SECONDS).build()
+                        )
+                        view.performClick()
+                    }
+                    true
                 }
-            }
+            } },
+            update = { view -> if (previewView !== view) previewView = view }
         )
+        Text("Tap the viewfinder to focus", modifier = Modifier.padding(horizontal = 16.dp))
+        cameraError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
         Button(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
