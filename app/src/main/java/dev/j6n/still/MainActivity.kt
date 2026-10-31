@@ -17,6 +17,8 @@ import androidx.camera.core.Camera
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.MeteringPointFactory
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTransformGestures
 import java.util.concurrent.TimeUnit
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -124,6 +126,10 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
     var boundCamera by remember { mutableStateOf<Camera?>(null) }
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
     var cameraError by remember { mutableStateOf<String?>(null) }
+    var zoomRatio by remember { mutableFloatStateOf(1f) }
+    var exposureIndex by remember { mutableIntStateOf(0) }
+    var exposureRange by remember { mutableStateOf(0..0) }
+    var maxZoom by remember { mutableFloatStateOf(1f) }
 
     LaunchedEffect(granted, frontFacing, previewView) {
         val view = previewView ?: return@LaunchedEffect
@@ -147,6 +153,11 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
             provider.unbindAll()
             boundCamera = provider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
             imageCapture = capture
+            val camera = boundCamera!!
+            maxZoom = camera.cameraInfo.zoomState.value?.maxZoomRatio ?: 1f
+            zoomRatio = 1f
+            exposureRange = camera.cameraInfo.exposureState.exposureCompensationRange.let { it.lower..it.upper }
+            exposureIndex = camera.cameraInfo.exposureState.exposureCompensationIndex
             cameraError = null
         } catch (exception: Exception) {
             cameraError = exception.message ?: "Unable to start camera"
@@ -180,7 +191,13 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
             }
         }
         AndroidView(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.weight(1f).fillMaxWidth().pointerInput(boundCamera, maxZoom) {
+                detectTransformGestures { _, _, zoom, _ ->
+                    val next = (zoomRatio * zoom).coerceIn(1f, maxZoom)
+                    zoomRatio = next
+                    boundCamera?.cameraControl?.setZoomRatio(next)
+                }
+            },
             factory = { ctx -> PreviewView(ctx).apply {
                 scaleType = PreviewView.ScaleType.FILL_CENTER
                 setOnTouchListener { view, event ->
@@ -196,7 +213,24 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
             } },
             update = { view -> if (previewView !== view) previewView = view }
         )
-        Text("Tap the viewfinder to focus", modifier = Modifier.padding(horizontal = 16.dp))
+        Text("Tap to focus · pinch to zoom", modifier = Modifier.padding(horizontal = 16.dp))
+        if (maxZoom > 1f) {
+            Text("Zoom: ${"%.1f".format(zoomRatio)}×", modifier = Modifier.padding(horizontal = 16.dp))
+            Slider(value = zoomRatio.coerceIn(1f, maxZoom), onValueChange = {
+                zoomRatio = it
+                boundCamera?.cameraControl?.setZoomRatio(it)
+            }, valueRange = 1f..maxZoom, modifier = Modifier.padding(horizontal = 16.dp))
+        }
+        if (exposureRange.first < exposureRange.last) {
+            Text("Exposure: ${exposureIndex} steps", modifier = Modifier.padding(horizontal = 16.dp))
+            Slider(value = exposureIndex.toFloat().coerceIn(exposureRange.first.toFloat(), exposureRange.last.toFloat()),
+                onValueChange = {
+                    exposureIndex = it.toInt()
+                    boundCamera?.cameraControl?.setExposureCompensationIndex(exposureIndex)
+                }, valueRange = exposureRange.first.toFloat()..exposureRange.last.toFloat(),
+                steps = (exposureRange.last - exposureRange.first - 1).coerceAtLeast(0),
+                modifier = Modifier.padding(horizontal = 16.dp))
+        }
         cameraError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
         Button(
