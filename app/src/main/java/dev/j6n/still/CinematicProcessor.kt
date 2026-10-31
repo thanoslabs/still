@@ -9,7 +9,14 @@ enum class CinematicLook(val title: String, val contrast: Float, val warmth: Flo
     STILL("Still", 1.12f, 0.04f, 0.85f),
     DUSK("Dusk", 1.18f, 0.09f, 0.78f),
     NOIR("Noir", 1.25f, 0f, 0f),
-    COOL("Blue Hour", 1.1f, -0.08f, 0.82f)
+    COOL("Blue Hour", 1.1f, -0.08f, 0.82f),
+    GOLDEN("Golden Hour", 1.08f, 0.12f, 1.12f),
+    VINTAGE("Vintage Film", 0.94f, 0.08f, 0.72f),
+    TEAL("Teal & Orange", 1.22f, -0.06f, 1.2f),
+    MOODY("Moody", 1.32f, -0.03f, 0.62f),
+    FADED("Faded Film", 0.82f, 0.035f, 0.68f),
+    BLEACH("Bleach Bypass", 1.35f, -0.015f, 0.36f),
+    ROSE("Rose", 1.05f, 0.065f, 0.94f)
 }
 
 object CinematicProcessor {
