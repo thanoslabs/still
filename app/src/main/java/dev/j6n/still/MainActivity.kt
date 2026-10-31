@@ -13,6 +13,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Camera
+import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.MeteringPointFactory
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import kotlinx.coroutines.delay
+import java.util.concurrent.TimeUnit
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -114,6 +125,55 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var frontFacing by remember { mutableStateOf(false) }
+    var flashEnabled by remember { mutableStateOf(false) }
+    var boundCamera by remember { mutableStateOf<Camera?>(null) }
+    var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    var cameraError by remember { mutableStateOf<String?>(null) }
+    var zoomRatio by remember { mutableFloatStateOf(1f) }
+    var exposureIndex by remember { mutableIntStateOf(0) }
+    var exposureRange by remember { mutableStateOf(0..0) }
+    var maxZoom by remember { mutableFloatStateOf(1f) }
+    var timerSeconds by remember { mutableIntStateOf(0) }
+    var countdown by remember { mutableIntStateOf(0) }
+    var showGrid by remember { mutableStateOf(false) }
+    val cameraScope = rememberCoroutineScope()
+
+    LaunchedEffect(granted, frontFacing, previewView) {
+        val view = previewView ?: return@LaunchedEffect
+        if (!granted) return@LaunchedEffect
+        imageCapture = null
+        boundCamera = null
+        try {
+            val provider = withContext(Dispatchers.IO) {
+                ProcessCameraProvider.getInstance(context).get()
+            }
+            val selector = if (frontFacing) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+            if (!provider.hasCamera(selector)) {
+                cameraError = "This device doesn't have the selected camera"
+                return@LaunchedEffect
+            }
+            val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
+            val capture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .setFlashMode(if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
+                .build()
+            provider.unbindAll()
+            boundCamera = provider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
+            imageCapture = capture
+            val camera = boundCamera!!
+            maxZoom = camera.cameraInfo.zoomState.value?.maxZoomRatio ?: 1f
+            zoomRatio = 1f
+            exposureRange = camera.cameraInfo.exposureState.exposureCompensationRange.let { it.lower..it.upper }
+            exposureIndex = camera.cameraInfo.exposureState.exposureCompensationIndex
+            cameraError = null
+        } catch (exception: Exception) {
+            cameraError = exception.message ?: "Unable to start camera"
+        }
+    }
+    LaunchedEffect(flashEnabled, imageCapture) {
+        imageCapture?.flashMode = if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
+    }
 
     if (!granted) {
         Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -128,31 +188,80 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        AndroidView(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            factory = { ctx -> PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } },
-            update = { view ->
-                if (view.tag != lifecycleOwner) {
-                    view.tag = lifecycleOwner
-                    val future = ProcessCameraProvider.getInstance(context)
-                    future.addListener({
-                        try {
-                            val provider = future.get()
-                            val preview = Preview.Builder().build().also {
-                                it.surfaceProvider = view.surfaceProvider
-                            }
-                            val capture = ImageCapture.Builder()
-                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY).build()
-                            provider.unbindAll()
-                            provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, capture)
-                            imageCapture = capture
-                        } catch (exception: Exception) {
-                            error = exception.message ?: "Unable to start camera"
-                        }
-                    }, ContextCompat.getMainExecutor(context))
-                }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = { frontFacing = !frontFacing }, enabled = !busy) {
+                Text(if (frontFacing) "Front camera ↺" else "Rear camera ↺")
             }
+            OutlinedButton(onClick = { flashEnabled = !flashEnabled }, enabled = !busy) {
+                Text(if (flashEnabled) "Flash on" else "Flash off")
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize().fillMaxWidth().pointerInput(boundCamera, maxZoom) {
+                detectTransformGestures { _, _, zoom, _ ->
+                    val next = (zoomRatio * zoom).coerceIn(1f, maxZoom)
+                    zoomRatio = next
+                    boundCamera?.cameraControl?.setZoomRatio(next)
+                }
+            },
+            factory = { ctx -> PreviewView(ctx).apply {
+                scaleType = PreviewView.ScaleType.FILL_CENTER
+                setOnTouchListener { view, event ->
+                    if (event.action == android.view.MotionEvent.ACTION_UP) {
+                        val point = (view as PreviewView).meteringPointFactory.createPoint(event.x, event.y)
+                        boundCamera?.cameraControl?.startFocusAndMetering(
+                            FocusMeteringAction.Builder(point).setAutoCancelDuration(3, TimeUnit.SECONDS).build()
+                        )
+                        view.performClick()
+                    }
+                    true
+                }
+            } },
+            update = { view -> if (previewView !== view) previewView = view }
         )
+        if (showGrid) Canvas(Modifier.matchParentSize()) {
+            val stroke = 1.dp.toPx()
+            for (fraction in listOf(1f / 3f, 2f / 3f)) {
+                drawLine(Color.White.copy(alpha = 0.5f), Offset(size.width * fraction, 0f),
+                    Offset(size.width * fraction, size.height), strokeWidth = stroke)
+                drawLine(Color.White.copy(alpha = 0.5f), Offset(0f, size.height * fraction),
+                    Offset(size.width, size.height * fraction), strokeWidth = stroke)
+            }
+        }
+        if (countdown > 0) Text("$"+"countdown", style = MaterialTheme.typography.displayLarge,
+            modifier = Modifier.align(Alignment.Center))
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = {
+                timerSeconds = when (timerSeconds) { 0 -> 3; 3 -> 10; else -> 0 }
+            }, enabled = !busy) { Text("Timer: "+"$"+"{timerSeconds}s") }
+            OutlinedButton(onClick = { showGrid = !showGrid }) {
+                Text(if (showGrid) "Grid on" else "Grid off")
+            }
+        }
+        Text("Tap to focus · pinch to zoom", modifier = Modifier.padding(horizontal = 16.dp))
+        if (maxZoom > 1f) {
+            Text("Zoom: ${"%.1f".format(zoomRatio)}×", modifier = Modifier.padding(horizontal = 16.dp))
+            Slider(value = zoomRatio.coerceIn(1f, maxZoom), onValueChange = {
+                zoomRatio = it
+                boundCamera?.cameraControl?.setZoomRatio(it)
+            }, valueRange = 1f..maxZoom, modifier = Modifier.padding(horizontal = 16.dp))
+        }
+        if (exposureRange.first < exposureRange.last) {
+            Text("Exposure: ${exposureIndex} steps", modifier = Modifier.padding(horizontal = 16.dp))
+            Slider(value = exposureIndex.toFloat().coerceIn(exposureRange.first.toFloat(), exposureRange.last.toFloat()),
+                onValueChange = {
+                    exposureIndex = it.toInt()
+                    boundCamera?.cameraControl?.setExposureCompensationIndex(exposureIndex)
+                }, valueRange = exposureRange.first.toFloat()..exposureRange.last.toFloat(),
+                steps = (exposureRange.last - exposureRange.first - 1).coerceAtLeast(0),
+                modifier = Modifier.padding(horizontal = 16.dp))
+        }
+        cameraError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }
         Button(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
@@ -160,7 +269,14 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
             onClick = {
                 val capture = imageCapture ?: return@Button
                 busy = true
-                val values = ContentValues().apply {
+                cameraScope.launch {
+                    try {
+                        for (second in timerSeconds downTo 1) {
+                            countdown = second
+                            delay(1000)
+                        }
+                        countdown = 0
+                        val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, "Still_${System.currentTimeMillis()}.jpg")
                     put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -181,6 +297,12 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
                             error = exception.message ?: "Capture failed"
                         }
                     })
+                    } catch (exception: Exception) {
+                        busy = false
+                        countdown = 0
+                        error = exception.message ?: "Capture failed"
+                    }
+                }
             }
         ) { Text(if (busy) "Saving…" else "Capture") }
     }
