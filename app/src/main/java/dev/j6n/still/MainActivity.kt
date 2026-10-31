@@ -136,7 +136,7 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
     var maxZoom by remember { mutableFloatStateOf(1f) }
     var timerSeconds by remember { mutableIntStateOf(0) }
     var countdown by remember { mutableIntStateOf(0) }
-    var showGrid by remember { mutableStateOf(false) }
+    var gridMode by remember { mutableStateOf(CompositionGrid.THIRDS) }
     val cameraScope = rememberCoroutineScope()
 
     LaunchedEffect(granted, frontFacing, previewView) {
@@ -222,15 +222,7 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
             } },
             update = { view -> if (previewView !== view) previewView = view }
         )
-        if (showGrid) Canvas(Modifier.matchParentSize()) {
-            val stroke = 1.dp.toPx()
-            for (fraction in listOf(1f / 3f, 2f / 3f)) {
-                drawLine(Color.White.copy(alpha = 0.5f), Offset(size.width * fraction, 0f),
-                    Offset(size.width * fraction, size.height), strokeWidth = stroke)
-                drawLine(Color.White.copy(alpha = 0.5f), Offset(0f, size.height * fraction),
-                    Offset(size.width, size.height * fraction), strokeWidth = stroke)
-            }
-        }
+        CompositionOverlay(gridMode, Modifier.matchParentSize())
         if (countdown > 0) Text("$"+"countdown", style = MaterialTheme.typography.displayLarge,
             modifier = Modifier.align(Alignment.Center))
         }
@@ -239,8 +231,8 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
             OutlinedButton(onClick = {
                 timerSeconds = when (timerSeconds) { 0 -> 3; 3 -> 10; else -> 0 }
             }, enabled = !busy) { Text("Timer: "+"$"+"{timerSeconds}s") }
-            OutlinedButton(onClick = { showGrid = !showGrid }) {
-                Text(if (showGrid) "Grid on" else "Grid off")
+            OutlinedButton(onClick = { gridMode = gridMode.next() }) {
+                Text("Grid: ${gridMode.label}")
             }
         }
         Text("Tap to focus · pinch to zoom", modifier = Modifier.padding(horizontal = 16.dp))
@@ -305,6 +297,33 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
                 }
             }
         ) { Text(if (busy) "Saving…" else "Capture") }
+    }
+}
+
+enum class CompositionGrid(val label: String) {
+    OFF("Off"), THIRDS("Thirds"), FOUR_BY_FOUR("4×4"), GOLDEN("Golden"), CROSSHAIR("Center");
+    fun next(): CompositionGrid = entries[(ordinal + 1) % entries.size]
+}
+
+@Composable
+private fun CompositionOverlay(mode: CompositionGrid, modifier: Modifier = Modifier) {
+    if (mode == CompositionGrid.OFF) return
+    Canvas(modifier) {
+        val lineColor = Color.White.copy(alpha = 0.55f)
+        val stroke = 1.dp.toPx()
+        fun vertical(fraction: Float) = drawLine(lineColor, Offset(size.width * fraction, 0f), Offset(size.width * fraction, size.height), strokeWidth = stroke)
+        fun horizontal(fraction: Float) = drawLine(lineColor, Offset(0f, size.height * fraction), Offset(size.width, size.height * fraction), strokeWidth = stroke)
+        when (mode) {
+            CompositionGrid.THIRDS -> listOf(1f / 3f, 2f / 3f).forEach { vertical(it); horizontal(it) }
+            CompositionGrid.FOUR_BY_FOUR -> listOf(0.25f, 0.5f, 0.75f).forEach { vertical(it); horizontal(it) }
+            CompositionGrid.GOLDEN -> listOf(0.382f, 0.618f).forEach { vertical(it); horizontal(it) }
+            CompositionGrid.CROSSHAIR -> {
+                val arm = 18.dp.toPx()
+                drawLine(lineColor, Offset(size.width / 2f - arm, size.height / 2f), Offset(size.width / 2f + arm, size.height / 2f), strokeWidth = stroke)
+                drawLine(lineColor, Offset(size.width / 2f, size.height / 2f - arm), Offset(size.width / 2f, size.height / 2f + arm), strokeWidth = stroke)
+            }
+            CompositionGrid.OFF -> Unit
+        }
     }
 }
 
