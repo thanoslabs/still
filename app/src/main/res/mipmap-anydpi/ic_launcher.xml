@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Opaque black tile, matching the approved monochrome film-strip concept. -->
+    <path android:fillColor="#000000" android:pathData="M0,0 H108 V108 H0 Z"/>
+    <!-- Three frames: top and bottom deliberately cropped. -->
+    <path android:fillColor="#FFFFFF" android:pathData="M26,12 H82 V96 H26 Z"/>
+    <path android:fillColor="#000000" android:pathData="M39,8 H69 V33 H39 Z M39,39 H69 V69 H39 Z M39,75 H69 V101 H39 Z M29,24 h5 v5 h-5 z M74,24 h5 v5 h-5 z M29,35 h5 v5 h-5 z M74,35 h5 v5 h-5 z M29,46 h5 v5 h-5 z M74,46 h5 v5 h-5 z M29,57 h5 v5 h-5 z M74,57 h5 v5 h-5 z M29,68 h5 v5 h-5 z M74,68 h5 v5 h-5 z M29,79 h5 v5 h-5 z M74,79 h5 v5 h-5 z"/>
+</vector>
