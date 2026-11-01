@@ -134,6 +134,7 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
     var exposureIndex by remember { mutableIntStateOf(0) }
     var exposureRange by remember { mutableStateOf(0..0) }
     var maxZoom by remember { mutableFloatStateOf(1f) }
+    var proMode by remember { mutableStateOf(false) }
     var timerSeconds by remember { mutableIntStateOf(0) }
     var countdown by remember { mutableIntStateOf(0) }
     var gridMode by remember { mutableStateOf(CompositionGrid.THIRDS) }
@@ -228,6 +229,7 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = { proMode = !proMode }) { Text(if (proMode) "Pro ✓" else "Auto") }
             OutlinedButton(onClick = {
                 timerSeconds = when (timerSeconds) { 0 -> 3; 3 -> 10; else -> 0 }
             }, enabled = !busy) { Text("Timer: "+"$"+"{timerSeconds}s") }
@@ -235,15 +237,15 @@ private fun CameraScreen(onCaptured: (Uri) -> Unit) {
                 Text("Grid: ${gridMode.label}")
             }
         }
-        Text("Tap to focus · pinch to zoom", modifier = Modifier.padding(horizontal = 16.dp))
-        if (maxZoom > 1f) {
+        if (proMode) Text("Tap to focus · pinch to zoom", modifier = Modifier.padding(horizontal = 16.dp))
+        if (proMode && maxZoom > 1f) {
             Text("Zoom: ${"%.1f".format(zoomRatio)}×", modifier = Modifier.padding(horizontal = 16.dp))
             Slider(value = zoomRatio.coerceIn(1f, maxZoom), onValueChange = {
                 zoomRatio = it
                 boundCamera?.cameraControl?.setZoomRatio(it)
             }, valueRange = 1f..maxZoom, modifier = Modifier.padding(horizontal = 16.dp))
         }
-        if (exposureRange.first < exposureRange.last) {
+        if (proMode && exposureRange.first < exposureRange.last) {
             Text("Exposure: ${exposureIndex} steps", modifier = Modifier.padding(horizontal = 16.dp))
             Slider(value = exposureIndex.toFloat().coerceIn(exposureRange.first.toFloat(), exposureRange.last.toFloat()),
                 onValueChange = {
