@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -22,7 +24,7 @@ android {
             if (!encoded.isNullOrBlank()) {
                 val keystoreFile = layout.buildDirectory.file("signing/still-release.p12").get().asFile
                 keystoreFile.parentFile.mkdirs()
-                keystoreFile.writeBytes(java.util.Base64.getDecoder().decode(encoded))
+                keystoreFile.writeBytes(Base64.getDecoder().decode(encoded))
                 storeType = "PKCS12"
                 storeFile = keystoreFile
                 storePassword = System.getenv("STILL_KEYSTORE_PASSWORD")
